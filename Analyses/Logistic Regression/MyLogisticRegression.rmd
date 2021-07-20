@@ -1,20 +1,167 @@
 ---
-title: "My Simple Logistic Regression"
+title: "Nashville Soccer Club - Shooting Stats Analysis"
 output: 
   html_document:
-    theme: cerulean
+    theme: lumen
+    toc: true
+    toc_float: true
     code_folding: hide
 ---
 
-<!-- Find some data of interest to you that can be analyzed with a logistic regression. Complete your Logistic Regression Analysis using this file. 
-
-Hint, run the command 
-
-> data() 
-
-in your Console to see available datasets in R that you could use for this Analysis. You are also welcome to collect data yourself, or find other available datasets online for this Analysis. Just be careful to not use anyone else's "analysis" for this Analysis. Also, no conducting surveys unless you have IRB approval to do so. -->
-
 ```{r, include=FALSE}
+library(prettydoc)
 library(mosaic)
 library(ResourceSelection) 
+library(tidyverse)
+library(pander)
+library(ggplot2)
+library(plotly)
+library(DT)
+MLS1 <- read.csv("../../Data/MLS Data Logistic R.csv", header=TRUE)
+View(MLS1)
+
 ```
+
+![](../../Data/nashville.png)
+
+
+## Background
+
+*How many shots do Nasvhille Soccer Club need to take in order to score a goal?*
+
+In order to win a soccer match, a team has to score at least one goal, and sometimes more than one depending on how many goals they concede. In this analysis, we seek to better understand the scoring potential of Nashville Soccer Club- one of the most exciting teams in the Major League Soccer competition. 
+
+We are going to predict how many shots Nashville need to take in order to have a probability of 1 that they are going to score. In other words, how many shots do they need to take to almost guarantee that they will score (99% chance). Of course, very few things in life have a certain probability of 100%. 
+
+We will use the current shooting accuracy of all players in the team (defenders, midfielders, and strikers) and compare it to how many goals each player has scored. 
+These two variables will give us our logistic regression model. 
+
+The data only include the stats from the current 2021 season.
+All data was pulled from the following website:
+https://fbref.com/en/squads/35f1b818/Nashville-SC-Stats
+
+
+## Logistic Model
+
+The probability of any player scoring at least one goal during a game based on the history of how many total shots each player has taken (during the current season) is given by the following logistic model:
+
+
+
+$$
+  P(Y_i = 1|x_i) = \frac{e^{\beta_0+\beta_1 x_i}}{1+e^{\beta_0 + \beta_1 x_i}} = \pi_i
+$$
+
+In this model, for each previous goal scored $i$: 
+
+* $Y_i = 1$ denotes at least one goal scored
+* $Y_i=0$  denotes no goals scored
+* $x_i$ denotes the number of shots each player has taken so far this season
+
+If $\beta_1$ is zero in the above model, then $x_i$ (total shots) provides no insight about the probability of scoring one goal. If not zero however, then the number of shots taken plays an important role in the probability of goals scored. 
+Using a significance level of $\alpha = 0.05$ we will test the below hypotheses about $\beta_1$.
+
+$$
+  H_0: \beta_1 = 0 \\
+  H_a: \beta_1 \neq 0
+$$
+
+<br />
+
+### Fitting the Model
+
+The estimates of the coefficients $\beta_0$ and $\beta_1$ for the above logistic regression model and data are shown below.
+
+```{r}
+mls.glm <- glm(Goals>0 ~ Shots, data=MLS1, family=binomial)
+summary(mls.glm) %>% pander()
+```
+
+<br/>
+
+This gives the estimated model for $\pi_i$ as
+$$
+  P(Y_i = 1|x_i) \approx \frac{e^{-2.614+0.2705 x_i}}{1+e^{-2.614+0.2705 x_i}} = \hat{\pi}_i
+$$
+where $b_0 = 2.614$ is the value of the `(Intercept)` which estimates $\beta_0$ and $b_1 = -0.2705$ is the value of `Shots` which estimates $\beta_1$.
+
+Importantly, the p-value for the test of `Shots` shows a *significant* result (p=0.02023) giving sufficient evidence to conclude that β1≠0. The number of shots taken does effect the probability of at least one goal scored. 
+
+However, this is fairly obvious and redundant information because you cannot score a goal unless you take a shot (the only exception being an own-goal).
+We are more interested in predicting how many shots Nashville SC players need to take in order to get the probability of scoring at least one goal as close to 100% as possible. 
+
+
+### Visualizing The Model
+
+
+
+
+```{r message=FALSE, warning=FALSE}
+p <- plot( Goals>0 ~ Shots, data=MLS1, xlab="Total Shots Taken per Player", ylab='Probability of Scoring At Least One Goal', pch=16, main="Nashville Soccer Club Probability of Scoring a Goal")
+curve(exp(-2.614+0.270*x)/(1+exp(-2.614+0.2705*x)), add=TRUE)
+
+ggplotly(p)
+
+#exp(0.2705)
+
+```
+The visual above illustrates a positive logistic regression. The more shots that are taken, the closer the probability of scoring a goal gets to 1 (100%). Most teams take up to 10 shots a game. If this were the case in Nashville SC next game, they would roughly have a 50% chance of scoring (reading off the visual). 
+
+
+
+### Diagnosing The Model
+
+In order to prove that this data is a good fit for a Logistic Regression test, we will apply the Hosmer-Lemeshow goodness of fit test (since there are only a couple repeated $x$-values) 
+
+```{r}
+
+hoslem.test(mls.glm$y, mls.glm$fitted, g = 10) %>% pander()
+```
+
+Since the null hypothesis is that the logistic regression is a good fit for the data, we will fail to reject the null with the following p-value. $(p-value = 0.7353)$.
+Therefore, we claim that the Logistic Regression model *is appropriate* for this analysis. 
+
+## Conclusion
+
+Let's answer the question that triggered this analysis:
+How many shots do Nashville SC need to take to **guarantee** they will score at least one goal in a match?
+
+The value of $e^{b_1} = e^{0.2705} \approx 1.31062$ shows that the odds of scoring at least one goal for a given match increases by a factor of 1.31 for every additional shot taken. Said differently, the odds of scoring a goal increase by 31% (1-1.31) for every additional shot taken. 
+
+According to [Fbref Stats](https://fbref.com/en/comps/22/Major-League-Soccer-Stats), Nashville SC take an average of 15 shots per game. The probability of scoring at least one goal having taken 15 shots is 0.809 or 80% (click "code" to view the equation)
+
+```{r}
+predict(mls.glm,newdata = data.frame(Shots = 15), type = "response") %>% pander()
+
+```
+
+In order to increase those odds, Nashville SC should take around *20* shots per game. 
+However, taking 20 shots in a single game is not always achievable.
+A better alternative is to improve shooting accuracy which will then reduce the number of shots needed to score. 
+
+The best players and teams only need a handful of chances to score a goal!
+
+
+
+## Datatable
+
+```{r}
+MLS_table <- select(MLS1, c(Player,Goals, Shots))
+datatable(MLS_table)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
